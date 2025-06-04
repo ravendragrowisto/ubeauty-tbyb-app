@@ -3,7 +3,7 @@
 client_id = "c9eeb35af488c0978a90b5dab4f7b538"
 name = "Ubeauty-tbyb-app"
 handle = "ubeauty-tbyb-app"
-application_url = "https://processes-vehicle-lebanon-dominican.trycloudflare.com"
+application_url = "https://measures-wondering-freeze-maintaining.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,10 +27,15 @@ scopes = "write_products,read_products,write_orders,read_orders,write_customers,
 
 [auth]
 redirect_urls = [
-  "https://processes-vehicle-lebanon-dominican.trycloudflare.com/auth/callback",
-  "https://processes-vehicle-lebanon-dominican.trycloudflare.com/auth/shopify/callback",
-  "https://processes-vehicle-lebanon-dominican.trycloudflare.com/api/auth/callback"
+  "https://measures-wondering-freeze-maintaining.trycloudflare.com/auth/callback",
+  "https://measures-wondering-freeze-maintaining.trycloudflare.com/auth/shopify/callback",
+  "https://measures-wondering-freeze-maintaining.trycloudflare.com/api/auth/callback"
 ]
 
 [pos]
 embedded = false
+
+[[extensions]]
+type = "theme_app_extension"
+name = "tbyb-extension"
+handle = "tbyb-extension"

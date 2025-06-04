@@ -1,0 +1,140 @@
+# .cursorrules for TBYB Shopify App
+# Project: Private Shopify app for "Try Before You Buy" (TBYB) feature
+# Date: June 2, 2025
+# API Version: Shopify 2025-04 (Winter ’25 Edition)
+# Tech Stack: Node.js, React, AWS RDS, Elastic Beanstalk, Shopify CLI v3.x.x
+
+## Project Context
+- **App Name**: tbyb-app
+- **Type**: Private Shopify app, Node.js-based, for a single store.
+- **Feature**: "Try Before You Buy" (TBYB) allows customers to order a sample, try it for 14 days, and confirm/cancel a deferred full-size product order.
+- **Customer-Side**:
+  - UI: "Add Sample to Cart" button, info popup on product page (Theme Extension, App Embed Block).
+  - Cart: Single sample per order, $10 deposit, mixed cart support.
+  - Trial: 14-day trial period, email/SMS reminders (Klaviyo/Postscript), max 3 samples per product.
+  - Customer Account: Deferred order management (cancel/process).
+- **Admin-Side**:
+  - UI: React-based panel for tagging samples, managing TBYB catalog, configuring reminders.
+- **Integrations**:
+  - Shopify APIs: Storefront, Admin, Cart, Checkout, Fulfillment, Customer Account, Flow (2025-04).
+  - Klaviyo: Email reminders (Tasks 1.4.1, 4.1).
+  - Postscript: SMS reminders (Tasks 1.4.2, 4.3).
+  - Weglot: Translation for popup and templates.
+- **Tech Stack**:
+  - Backend: Node.js (Express), AWS RDS (CustomerSampleHistory, TBYBConfig).
+  - Frontend: React (admin), Liquid/JS/CSS (storefront).
+  - Hosting: AWS Elastic Beanstalk.
+  - Queue: Bull (cron jobs, Task 4.4).
+- **Shopify CLI**: v3.x.x, use `shopify.app.yml` (not `shopify.app.toml`).
+- **Phase 1 Tasks** (in progress):
+  - 1.2.1: Shopify Partner account and development store (done).
+  - 1.3.1: Initialize app (`shopify app init`), configure `shopify.app.yml`, create Theme Extension.
+  - 1.4.1: Document Klaviyo Flow setup.
+  - 1.4.2: Document Postscript Flow setup.
+
+## Project Structure
+- **Root**: `tbyb-app/`
+  - `shopify.app.yml`: App configuration (scopes, webhooks, extensions).
+  - `web/`: Node.js backend (Express server, API endpoints).
+    - `index.js`: Entry point.
+    - `routes/`: API endpoints (e.g., `/apps/tbyb/check-eligibility`).
+  - `frontend/`: React admin panel.
+    - `pages/TBYBAdmin.jsx`: Admin UI (Task 3.1).
+    - `pages/Account.jsx`: Customer account UI (Task 5.1).
+  - `extensions/tbyb-extension/`: Theme Extension (App Embed Block).
+    - `blocks/tbyb-button.liquid`: "Add Sample to Cart" button (Task 2.1).
+    - `assets/tbyb.js`: Client-side logic (Task 2.3).
+    - `assets/tbyb.css`: Styles (Task 2.4).
+    - `settings_schema.json`: Extension settings.
+  - `docs/`: Documentation.
+    - `klaviyo-flow-setup.md`: Klaviyo Flow (Task 1.4.1).
+    - `postscript-flow-setup.md`: Postscript Flow (Task 1.4.2).
+  - `.env`: Environment variables (Shopify API key, Klaviyo/Postscript keys, RDS URI).
+- **Database**: AWS RDS (PostgreSQL recommended).
+  - Tables: `CustomerSampleHistory` (customerId, productId, trialStart, etc.), `TBYBConfig` (productId, sampleId, enabled).
+
+## Coding Standards
+- **Language**: JavaScript (ES6+), TypeScript optional (if enabled, use `.ts`).
+- **Style**: Follow ESLint (`eslint-config-shopify`), Prettier (`prettier --write`).
+  - Indentation: 2 spaces.
+  - Quotes: Single quotes.
+  - Semicolons: Required.
+- **Shopify APIs**:
+  - Use `@shopify/shopify-api` for Admin/Storefront API calls.
+  - GraphQL preferred over REST for efficiency (e.g., `customer.ordersCount`).
+  - API version: 2025-04.
+- **File Naming**:
+  - Kebab-case for files (e.g., `tbyb-button.liquid`, `tbyb.js`).
+  - PascalCase for React components (e.g., `TBYBAdmin.jsx`).
+- **Error Handling**:
+  - Use try-catch for API calls.
+  - Log errors to `console.error`, include context (e.g., endpoint, request ID).
+- **Security**:
+  - Validate Shopify webhook HMAC signatures.
+  - Use environment variables for API keys (`.env`).
+  - Minimal customer data in RDS (e.g., `customerId`, not email/phone).
+
+## Extension Guidelines
+- **Type**: Theme Extension (App Embed Block, not Admin Extensions).
+  - Use `shopify extension create --type=theme` (fixes CLI issue in Task 1.3.1).
+  - Path: `extensions/tbyb-extension/`.
+  - Block: `blocks/tbyb-button.liquid` for "Add Sample to Cart" button.
+- **Liquid**:
+  - Use Shopify Liquid syntax (e.g., `{{ product.selected_or_first_available_variant.id }}`).
+  - Conditional rendering: `{% if block.settings.tbyb_enabled %}...{% endif %}`.
+- **JavaScript**:
+  - Defer scripts: `<script src="{{ 'tbyb.js' | asset_url }}" defer>`.
+  - Use `fetch` for API calls to `/apps/tbyb/*` endpoints.
+  - Support `i18next` for translations (Task 2.4).
+- **CSS**:
+  - Scoped styles in `tbyb.css`.
+  - Use CSS custom properties for theming (e.g., `--tbyb-button-bg`).
+
+## API Endpoints
+- **Base Path**: `/apps/tbyb`
+- **Endpoints** (reference for future tasks):
+  - `POST /check-eligibility`: Check customer eligibility (Task 2.2).
+  - `POST /check-cart`: Validate single sample (Task 2.5).
+  - `POST /create-order`: Create order with deposit (Task 2.8).
+  - `POST /create-deferred-order`: Deferred order (Task 2.10).
+  - `POST /tag-sample`: Tag samples (Task 3.1).
+- **Authentication**: Use `@shopify/koa-shopify-auth` for session-based auth.
+
+## Integrations
+- **Klaviyo** (Task 1.4.1):
+  - Flow Trigger: `Order Metafield Updated` (`tbyb.trial_start`).
+  - Action: HTTP POST to `https://a.klaviyo.com/api/track`.
+  - Documentation: `docs/klaviyo-flow-setup.md`.
+- **Postscript** (Task 1.4.2):
+  - Flow Trigger: `Order Metafield Updated` (`tbyb.trial_start`).
+  - Action: HTTP POST to `https://api.postscript.io/v2/campaigns/trigger`.
+  - Documentation: `docs/postscript-flow-setup.md`.
+- **Weglot**:
+  - Use `i18next` in `tbyb.js` for storefront translations.
+  - Support translation tags in email/SMS templates.
+
+## Documentation
+- **Format**: Markdown (`.md`).
+- **Location**: `docs/`.
+- **Style**:
+  - Clear headings (e.g., `# Klaviyo Flow Setup`).
+  - Include prerequisites, steps, testing, and notes.
+  - Note pending items (e.g., API keys).
+
+## CLI Commands
+- Initialize app: `shopify app init --template=node`.
+- Create Theme Extension: `shopify extension create --type=theme`.
+- Serve locally: `npm run dev`.
+- Deploy: `shopify app deploy` (after Elastic Beanstalk setup, Task 1.6.1).
+
+## Phase 1 Tasks (June 2, 2025)
+- **Task 1.3.1**: Initialize app, configure `shopify.app.yml`, create Theme Extension.
+  - Use `shopify extension create --type=theme` to avoid Admin Extensions.
+- **Task 1.4.1**: Document Klaviyo Flow in `docs/klaviyo-flow-setup.md`.
+- **Task 1.4.2**: Document Postscript Flow in `docs/postscript-flow-setup.md`.
+
+## Notes
+- **CLI Issue**: If only Admin Extensions appear, ensure CLI is v3.x.x (`shopify version`) and use `--type=theme`.
+- **Environment**: Use `.env` for sensitive data (e.g., `SHOPIFY_API_KEY`, `KLAWIYO_API_KEY`).
+- **Future Tasks**: Reference technical design (Task 1.8) for endpoints, webhooks, Shopify Functions.
+- **Time Zone**: Current time is 10:12 PM IST, June 2, 2025.
