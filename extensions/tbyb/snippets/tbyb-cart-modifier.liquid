@@ -1,0 +1,316 @@
+{% comment %}
+TBYB Cart Price Modifier
+Include this snippet in your cart template to automatically adjust TBYB sample prices
+{% endcomment %}
+
+<!-- TBYB Cart Modifier - Handles deposit pricing display for TBYB samples -->
+<script>
+(function() {
+  const TBYB_CONFIG = {
+    depositAmount: 10, // $10 deposit
+    trialDays: 14,
+    sampleKeyword: 'sample' // Items containing this in title/properties are treated as samples
+  };
+
+  function formatMoney(cents) {
+    return '$' + (cents / 100).toFixed(2);
+  }
+
+  function modifyTBYBItems() {
+    // Find all cart items
+    const cartItems = document.querySelectorAll(
+      '.cart-item, .cart__item, .drawer__cart-item, [data-cart-item], .line-item'
+    );
+
+    cartItems.forEach(item => {
+      // Check if this is a TBYB sample
+      const titleElement = item.querySelector('.cart-item__name, .cart__item-name, .product-title, h3, h4, .line-item__title');
+      const priceElement = item.querySelector('.cart-item__price, .cart__item-price, .price, .line-item__price');
+      const propertiesElement = item.querySelector('.cart-item__properties, .line-item__properties, .product-details');
+      
+      if (!titleElement || !priceElement) return;
+      
+      const title = titleElement.textContent || '';
+      
+      // Check for TBYB indicators
+      let isTBYBSample = false;
+      let hasSellingPlan = false;
+      let tbybProperties = {};
+      
+      // Check title for sample keyword
+      if (title.toLowerCase().includes(TBYB_CONFIG.sampleKeyword)) {
+        isTBYBSample = true;
+      }
+      
+      // Check properties for TBYB indicators
+      if (propertiesElement) {
+        const propertiesText = propertiesElement.textContent || '';
+        if (propertiesText.includes('_tbyb_sample: true') || propertiesText.includes('TBYB')) {
+          isTBYBSample = true;
+          
+          // Extract TBYB properties
+          const propMatches = propertiesText.match(/_tbyb_[^:]+:[^,\n]+/g);
+          if (propMatches) {
+            propMatches.forEach(match => {
+              const [key, value] = match.split(':').map(s => s.trim());
+              tbybProperties[key] = value;
+            });
+          }
+        }
+        
+        // Check for selling plan indicator
+        if (propertiesText.includes('selling_plan') || propertiesText.includes('subscription')) {
+          hasSellingPlan = true;
+        }
+      }
+      
+      // Check for selling plan in item data attributes
+      if (item.hasAttribute('data-selling-plan') || item.querySelector('[data-selling-plan]')) {
+        hasSellingPlan = true;
+      }
+      
+      if (isTBYBSample && !item.hasAttribute('data-tbyb-modified')) {
+        // Mark as modified to avoid double processing
+        item.setAttribute('data-tbyb-modified', 'true');
+        
+        // Get original price
+        const originalPrice = priceElement.textContent;
+        const priceMatch = originalPrice.match(/[\d,]+\.?\d*/);
+        const numericPrice = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : 0;
+        
+        let displayInfo = '';
+        let statusClass = '';
+        
+        if (hasSellingPlan) {
+          // Item has real selling plan - Shopify is handling the pricing
+          displayInfo = `
+            <div class="tbyb-selling-plan-active">
+              <strong style="color: #059862;">✓ TBYB Selling Plan Active</strong><br>
+              <small>Shopify will charge deposit amount automatically</small>
+            </div>
+          `;
+          statusClass = 'tbyb-selling-plan';
+        } else {
+          // Manual pricing - show deposit amount
+          const depositPrice = formatMoney(TBYB_CONFIG.depositAmount * 100);
+          
+          priceElement.innerHTML = `
+            <span class="tbyb-deposit-price" style="color: #059862; font-weight: bold;">
+              ${depositPrice} 
+              <small style="color: #666;">(deposit)</small>
+            </span>
+            <br>
+            <span class="tbyb-original-price" style="text-decoration: line-through; color: #999; font-size: 0.9em;">
+              Full price: ${originalPrice}
+            </span>
+          `;
+          
+          displayInfo = `
+            <div class="tbyb-manual-pricing">
+              <strong style="color: #e67e22;">⚠ Manual Deposit Pricing</strong><br>
+              <small>Please ensure you only pay the deposit amount shown</small>
+            </div>
+          `;
+          statusClass = 'tbyb-manual';
+        }
+        
+        // Add trial info
+        const trialInfo = document.createElement('div');
+        trialInfo.className = 'tbyb-trial-info';
+        trialInfo.style.cssText = `
+          font-size: 0.85em; 
+          color: #666; 
+          margin-top: 5px; 
+          padding: 8px; 
+          background: ${hasSellingPlan ? '#e8f5e8' : '#fff3cd'}; 
+          border: 1px solid ${hasSellingPlan ? '#059862' : '#e67e22'};
+          border-radius: 4px;
+        `;
+        trialInfo.innerHTML = `
+          ${displayInfo}
+          <div style="margin-top: 5px;">
+            <strong>Try Before You Buy</strong><br>
+            ${TBYB_CONFIG.trialDays}-day trial period<br>
+            ${hasSellingPlan ? 'Automatic billing after trial' : 'Pay full amount only if you keep it'}
+          </div>
+        `;
+        
+        // Insert trial info after price
+        priceElement.parentNode.insertBefore(trialInfo, priceElement.nextSibling);
+        
+        // Add TBYB indicator to title
+        if (!titleElement.textContent.includes('(Sample)')) {
+          const indicator = hasSellingPlan ? '(TBYB Sample)' : '(Sample)';
+          titleElement.innerHTML += ` <span style="color: #059862; font-weight: bold;">${indicator}</span>`;
+        }
+        
+        // Add CSS class for styling
+        item.classList.add('tbyb-cart-item', statusClass);
+      }
+    });
+
+    // Update cart total note
+    updateCartTotalNote();
+  }
+
+  function updateCartTotalNote() {
+    const cartTotal = document.querySelector('.cart__total, .cart-total, .drawer__footer .totals, .cart-subtotal');
+    const tbybItems = document.querySelectorAll('[data-tbyb-modified="true"]');
+    const sellingPlanItems = document.querySelectorAll('.tbyb-selling-plan');
+    const manualItems = document.querySelectorAll('.tbyb-manual');
+    
+    if (cartTotal && tbybItems.length > 0) {
+      // Remove existing TBYB note
+      const existingNote = cartTotal.parentNode.querySelector('.tbyb-total-note');
+      if (existingNote) {
+        existingNote.remove();
+      }
+      
+      // Create new note
+      const note = document.createElement('div');
+      note.className = 'tbyb-total-note';
+      note.style.cssText = `
+        margin-top: 10px; 
+        padding: 10px; 
+        background: ${sellingPlanItems.length > 0 ? '#e8f5e8' : '#fff3cd'}; 
+        border: 1px solid ${sellingPlanItems.length > 0 ? '#059862' : '#e67e22'}; 
+        border-radius: 4px; 
+        font-size: 0.9em;
+      `;
+      
+      let noteContent = `<strong>🛍️ TBYB Order (${tbybItems.length} items)</strong><br>`;
+      
+      if (sellingPlanItems.length > 0) {
+        noteContent += `✓ ${sellingPlanItems.length} items with automatic deposit pricing<br>`;
+      }
+      
+      if (manualItems.length > 0) {
+        noteContent += `⚠ ${manualItems.length} items require manual deposit payment<br>`;
+        noteContent += `Please ensure you only pay the deposit amounts shown.<br>`;
+      }
+      
+      noteContent += `Full payment due only if you keep the items.`;
+      
+      note.innerHTML = noteContent;
+      cartTotal.parentNode.appendChild(note);
+    }
+  }
+
+  // Initial modification
+  modifyTBYBItems();
+
+  // Listen for cart updates
+  const cartUpdateEvents = [
+    'cart:updated',
+    'cart:refresh', 
+    'cart:build',
+    'cartupdate',
+    'updateCart',
+    'tbyb_sample_added'
+  ];
+
+  cartUpdateEvents.forEach(eventName => {
+    document.addEventListener(eventName, () => {
+      setTimeout(modifyTBYBItems, 100); // Small delay to ensure DOM is updated
+    });
+    
+    window.addEventListener(eventName, () => {
+      setTimeout(modifyTBYBItems, 100);
+    });
+  });
+
+  // Watch for DOM changes (cart drawer opening/closing)
+  if (window.MutationObserver) {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          // Check if cart content was added
+          const hasCartContent = Array.from(mutation.addedNodes).some(node => 
+            node.nodeType === 1 && (
+              node.matches && node.matches('.cart-item, .cart__item, .drawer__cart-item, [data-cart-item]') ||
+              node.querySelector && node.querySelector('.cart-item, .cart__item, .drawer__cart-item, [data-cart-item]')
+            )
+          );
+          
+          if (hasCartContent) {
+            setTimeout(modifyTBYBItems, 200);
+          }
+        }
+      });
+    });
+
+    // Observe cart containers
+    const cartContainers = document.querySelectorAll(
+      '.cart, .cart-drawer, .drawer, [data-cart-drawer], .ajax-cart'
+    );
+    
+    cartContainers.forEach(container => {
+      observer.observe(container, {
+        childList: true,
+        subtree: true
+      });
+    });
+  }
+
+  // Also run when page loads completely
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', modifyTBYBItems);
+  } else {
+    modifyTBYBItems();
+  }
+  
+  // Run periodically as fallback
+  setInterval(modifyTBYBItems, 2000);
+  
+})();
+</script>
+
+<style>
+.tbyb-cart-item {
+  position: relative;
+}
+
+.tbyb-selling-plan {
+  border-left: 3px solid #059862 !important;
+  padding-left: 8px !important;
+}
+
+.tbyb-manual {
+  border-left: 3px solid #e67e22 !important;
+  padding-left: 8px !important;
+}
+
+.tbyb-deposit-price {
+  color: #059862 !important;
+  font-weight: bold !important;
+}
+
+.tbyb-original-price {
+  text-decoration: line-through !important;
+  color: #999 !important;
+  font-size: 0.9em !important;
+}
+
+.tbyb-trial-info {
+  font-size: 0.85em !important;
+  color: #666 !important;
+  margin-top: 5px !important;
+  padding: 8px !important;
+  border-radius: 4px !important;
+}
+
+.tbyb-selling-plan-active {
+  color: #059862 !important;
+}
+
+.tbyb-manual-pricing {
+  color: #e67e22 !important;
+}
+
+.tbyb-total-note {
+  margin-top: 10px !important;
+  padding: 10px !important;
+  border-radius: 4px !important;
+  font-size: 0.9em !important;
+}
+</style> 

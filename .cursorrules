@@ -1,7 +1,7 @@
 # .cursorrules for TBYB Shopify App
 # Project: Private Shopify app for "Try Before You Buy" (TBYB) feature
 # Date: June 2, 2025
-# API Version: Shopify 2025-04 (Winter ’25 Edition)
+# API Version: Shopify 2025-04 (Winter '25 Edition)
 # Tech Stack: Node.js, React, AWS RDS, Elastic Beanstalk, Shopify CLI v3.x.x
 
 ## Project Context
@@ -121,11 +121,36 @@
   - Include prerequisites, steps, testing, and notes.
   - Note pending items (e.g., API keys).
 
-## CLI Commands
-- Initialize app: `shopify app init --template=node`.
-- Create Theme Extension: `shopify extension create --type=theme`.
-- Serve locally: `npm run dev`.
-- Deploy: `shopify app deploy` (after Elastic Beanstalk setup, Task 1.6.1).
+## CLI Commands (Shopify CLI 3.0)
+- **Check CLI Version**: `shopify version` (ensure 3.x.x)
+- **Initialize app**: `shopify app init --template=node`
+- **Create Theme Extension**: `shopify app generate extension --type=theme`
+- **Serve locally**: `shopify app dev` (NOT `npm run dev`)
+- **Deploy**: `shopify app deploy`
+- **Install dependencies**: `npm install` or `yarn install`
+- **Build**: `npm run build`
+
+### **CLI 3.0 vs 2.0 Differences**:
+- ✅ Use: `shopify app dev` (starts both server and tunnel)
+- ❌ Avoid: `npm run dev` (CLI 2.0 syntax)
+- ✅ Use: `shopify app generate extension`
+- ❌ Avoid: `shopify extension create`
+
+### **Development Server Commands**:
+```bash
+# Start development server (CLI 3.0)
+shopify app dev
+
+# Alternative if CLI 3.0 not working
+npx shopify app dev
+
+# Check if server is running
+lsof -i | grep node | grep LISTEN
+
+# Kill existing processes if needed
+pkill -f "shopify app dev"
+pkill -f ngrok
+```
 
 ## Phase 1 Tasks (June 2, 2025)
 - **Task 1.3.1**: Initialize app, configure `shopify.app.yml`, create Theme Extension.
@@ -133,8 +158,189 @@
 - **Task 1.4.1**: Document Klaviyo Flow in `docs/klaviyo-flow-setup.md`.
 - **Task 1.4.2**: Document Postscript Flow in `docs/postscript-flow-setup.md`.
 
+## Testing Data
+- **Real Product ID**: "10056443822385"
+- **Real Variant ID**: "50204253028657"
+- **Shop Domain**: "ravendra-app-test.myshopify.com"
+- **Test API Calls**: Use these IDs for testing TBYB functionality
+- **IMPORTANT**: NO MOCK DATA - Always use real Shopify selling plans for functionality
+- **Real Selling Plan ID**: "gid://shopify/SellingPlan/691465748785"
+- **Real Selling Plan Group ID**: "gid://shopify/SellingPlanGroup/78762541361"
+- **Status**: ✅ REAL SELLING PLANS WORKING
+- **Cart API Fix**: ✅ Selling plan IDs converted from GraphQL GID to numeric for cart API
+- **Cart Drawer Fix**: ✅ Improved cart refresh logic with multiple methods and timing
+- **Cart Pricing Fix**: ✅ Enhanced cart properties and forced server refresh for correct pricing display
+- **ngrok Setup**: ✅ Stable tunnel URL implemented
+- **Current ngrok URL**: "https://ae6a-2409-40c4-1013-8a25-7c8d-c844-447e-5702.ngrok-free.app"
+- **ngrok Port**: 62653 (matches current dev server)
+- **Latest Selling Plan**: "gid://shopify/SellingPlan/691468009777" (with fixed $10 deposit pricing)
+
 ## Notes
 - **CLI Issue**: If only Admin Extensions appear, ensure CLI is v3.x.x (`shopify version`) and use `--type=theme`.
 - **Environment**: Use `.env` for sensitive data (e.g., `SHOPIFY_API_KEY`, `KLAWIYO_API_KEY`).
 - **Future Tasks**: Reference technical design (Task 1.8) for endpoints, webhooks, Shopify Functions.
 - **Time Zone**: Current time is 10:12 PM IST, June 2, 2025.
+
+## Troubleshooting Guide
+
+### **🚨 "net::ERR_FAILED" or "Failed to fetch" Errors**
+
+**Symptoms**: Console shows `POST https://[ngrok-url]/app/api/tbyb/public/create-selling-plan net::ERR_FAILED`
+
+**Root Cause**: ngrok tunnel and development server port mismatch (happens when server restarts on different port)
+
+**Step-by-Step Fix**:
+
+1. **Check Development Server Status**:
+   ```bash
+   ps aux | grep "shopify app dev" | grep -v grep
+   lsof -i | grep node | grep LISTEN
+   ```
+   
+2. **Check ngrok Status**:
+   ```bash
+   ps aux | grep ngrok | grep -v grep
+   curl -s http://127.0.0.1:4040/api/tunnels
+   ```
+
+3. **If Ports Don't Match**:
+   ```bash
+   # Stop ngrok
+   pkill -f ngrok
+   
+   # Start ngrok with correct port (e.g., if server on 62653)
+   ngrok http 62653
+   
+   # Get new URL
+   curl -s http://127.0.0.1:4040/api/tunnels
+   ```
+
+4. **Update URLs in Code**:
+   - Update `extensions/tbyb/assets/tbyb.js` line ~24: `this.appUrl = 'NEW_NGROK_URL'`
+   - Update `vite.config.js`
+
+5. **Test Connection**:
+   ```bash
+   curl -X POST "NEW_NGROK_URL/app/api/tbyb/public/check-eligibility" \
+     -H "Content-Type: application/json" \
+     -H "X-Shopify-Shop-Domain: ravendra-app-test.myshopify.com" \
+     -d '{"productId": "10056443822385","variantId": "50204253028657","shopDomain": "ravendra-app-test.myshopify.com"}'
+   ```
+
+**✅ Success Response**: `{"success":true,"eligible":true,"config":...}`
+
+### **🚨 CORS Policy Errors**
+
+**Symptoms**: 
+- `Access to fetch at 'https://[ngrok-url]' has been blocked by CORS policy`
+- `No 'Access-Control-Allow-Origin' header is present on the requested resource`
+- `Response to preflight request doesn't pass access control check`
+
+**Root Cause**: Missing or incorrect CORS headers in API responses
+
+**Step-by-Step Fix**:
+
+1. **Check API Route CORS Headers**:
+   ```bash
+   # Test OPTIONS request (preflight)
+   curl -X OPTIONS "NEW_NGROK_URL/app/api/tbyb/public/create-selling-plan" \
+     -H "Origin: https://ravendra-app-test.myshopify.com" \
+     -H "Access-Control-Request-Method: POST" \
+     -H "Access-Control-Request-Headers: Content-Type" \
+     -v
+   ```
+
+2. **Verify CORS Headers in Code**:
+   - Check `app/routes/app.api.tbyb.public.*.jsx` files
+   - Ensure all routes have proper CORS headers:
+   ```javascript
+   const corsHeaders = {
+     'Access-Control-Allow-Origin': '*',
+     'Access-Control-Allow-Methods': 'POST, OPTIONS',
+     'Access-Control-Allow-Headers': 'Content-Type, X-Shopify-Shop-Domain',
+   };
+   ```
+
+3. **Handle OPTIONS Requests**:
+   ```javascript
+   // In loader function
+   export const loader = async ({ request }) => {
+     if (request.method === 'OPTIONS') {
+       return new Response(null, { status: 200, headers: corsHeaders });
+     }
+     return json({ message: "Method not allowed" }, { status: 405, headers: corsHeaders });
+   };
+   ```
+
+4. **Add CORS to All Responses**:
+   ```javascript
+   // In action function
+   return json({
+     success: true,
+     data: responseData
+   }, { headers: corsHeaders });
+   ```
+
+5. **Test CORS Fix**:
+   ```bash
+   # Test actual POST request
+   curl -X POST "NEW_NGROK_URL/app/api/tbyb/public/check-eligibility" \
+     -H "Content-Type: application/json" \
+     -H "Origin: https://ravendra-app-test.myshopify.com" \
+     -d '{"productId": "10056443822385","variantId": "50204253028657","shopDomain": "ravendra-app-test.myshopify.com"}' \
+     -v
+   ```
+
+**✅ Success Response Headers Should Include**:
+```
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, X-Shopify-Shop-Domain
+```
+
+### **🔧 Complete Development Setup**:
+
+1. **Start Development Server (CLI 3.0)**:
+   ```bash
+   shopify app dev
+   ```
+
+2. **If CLI 3.0 Issues, Use Manual Setup**:
+   ```bash
+   # Terminal 1: Start server
+   npm run build && npm start
+   
+   # Terminal 2: Start ngrok
+   ngrok http [PORT] --authtoken 2yM0vIi7VVAJLwIZiFkseEiLaD6_7Pu38Uq1SUzq78VC25oAc
+   ```
+
+3. **Update Configuration**:
+   - Get ngrok URL from `curl -s http://127.0.0.1:4040/api/tunnels`
+   - Update `tbyb.js` with new URL
+   - Update `vite.config.js` if needed
+
+4. **Test Complete Flow**:
+   ```bash
+   # Test eligibility
+   curl -X POST "[NGROK_URL]/app/api/tbyb/public/check-eligibility" \
+     -H "Content-Type: application/json" \
+     -d '{"productId": "10056443822385","variantId": "50204253028657","shopDomain": "ravendra-app-test.myshopify.com"}'
+   
+   # Test selling plan creation
+   curl -X POST "[NGROK_URL]/app/api/tbyb/public/create-selling-plan" \
+     -H "Content-Type: application/json" \
+     -d '{"productId": "10056443822385","variantId": "50204253028657","shopDomain": "ravendra-app-test.myshopify.com"}'
+   ```
+
+### **Prevention Tips**:
+- Always use `shopify app dev` for CLI 3.0
+- Check CORS headers in all public API routes
+- Test both OPTIONS and POST requests
+- Keep ngrok and server ports aligned
+- Monitor browser console for CORS errors
+
+**Last Working Configuration**:
+- **CLI Command**: `shopify app dev`
+- **Server Port**: Auto-assigned by CLI 3.0
+- **ngrok**: Managed by CLI 3.0 or manual setup
+- **CORS**: ✅ All public routes have proper headers

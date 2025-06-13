@@ -30,3 +30,78 @@ model Session {
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
 }
+
+// TBYB Configuration for products
+model TBYBConfig {
+  id                String   @id @default(cuid())
+  productId         String   // Shopify product ID
+  sampleProductId   String?  // Sample product ID (if separate)
+  sampleVariantId   String?  // Sample variant ID
+  enabled           Boolean  @default(true)
+  trialDays         Int      @default(14)
+  depositAmount     String   @default("10.00") // Decimal as string to avoid precision issues
+  maxSamplesPerProduct Int   @default(3)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  shop              String
+
+  @@unique([shop, productId])
+  @@index([shop, enabled])
+}
+
+// Customer sample history tracking
+model CustomerSampleHistory {
+  id              String   @id @default(cuid())
+  customerId      String   // Shopify customer ID
+  productId       String   // Main product ID
+  sampleOrderId   String?  // Sample order ID
+  deferredOrderId String?  // Deferred full-size order ID
+  contractId      String?  // Subscription contract ID
+  trialStartDate  DateTime?
+  trialEndDate    DateTime?
+  status          TBYBStatus @default(SAMPLE_ORDERED)
+  depositPaid     Boolean  @default(false)
+  finalPaymentDue String?  // Amount due for full product
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  shop            String
+
+  @@unique([shop, customerId, productId, sampleOrderId])
+  @@index([shop, customerId])
+  @@index([shop, status])
+  @@index([trialEndDate])
+}
+
+// TBYB payment terms tracking
+model TBYBPaymentTerm {
+  id              String   @id @default(cuid())
+  paymentTermId   String   // Shopify payment term ID
+  orderId         String   // Related order ID
+  customerId      String   // Customer ID
+  dueAt           DateTime
+  amount          String   // Amount due
+  status          PaymentTermStatus @default(PENDING)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  shop            String
+
+  @@unique([shop, paymentTermId])
+  @@index([shop, dueAt, status])
+}
+
+enum TBYBStatus {
+  SAMPLE_ORDERED     // Customer ordered sample
+  TRIAL_ACTIVE       // Trial period active
+  TRIAL_EXPIRED      // Trial period expired, awaiting decision
+  CONFIRMED          // Customer confirmed full purchase
+  CANCELLED          // Customer cancelled
+  PAYMENT_FAILED     // Payment failed for full product
+  COMPLETED          // Full order completed and shipped
+}
+
+enum PaymentTermStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}

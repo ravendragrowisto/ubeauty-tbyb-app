@@ -1,0 +1,166 @@
+{% comment %}
+Try Before You Buy Button Block
+Displays on product pages when TBYB is available for the product
+{% endcomment %}
+
+{% if block.settings.enabled %}
+  <div class="tbyb-container" data-product-id="{{ product.id }}" data-variant-id="{{ product.selected_or_first_available_variant.id }}">
+    <div class="tbyb-info">
+      <div class="tbyb-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L13.09 8.26L19 9L13.09 9.74L12 16L10.91 9.74L5 9L10.91 8.26L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="tbyb-text">
+        <h3 class="tbyb-title">{{ block.settings.title | default: "Try Before You Buy" }}</h3>
+        <p class="tbyb-description">{{ block.settings.description | default: "Order a sample, try it for 14 days, then decide!" }}</p>
+        <div class="tbyb-details">
+          <span class="tbyb-deposit">Only $<span id="tbyb-deposit-amount">{{ block.settings.deposit_amount | default: 10 | money_without_currency }}</span> deposit</span>
+          <span class="tbyb-trial">{{ block.settings.trial_days | default: "14" }} day trial</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="tbyb-actions">
+      <button 
+        id="tbyb-button" 
+        class="tbyb-btn tbyb-btn-primary"
+        data-loading="false"
+        disabled
+      >
+        <span class="tbyb-btn-text">Add Sample to Cart</span>
+        <span class="tbyb-btn-loader">
+          <svg class="tbyb-spinner" width="16" height="16" viewBox="0 0 24 24">
+            <circle class="tbyb-spinner-path" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="31.416" stroke-dashoffset="31.416">
+              <animate attributeName="stroke-dasharray" dur="2s" values="0 31.416;15.708 15.708;0 31.416" repeatCount="indefinite"/>
+              <animate attributeName="stroke-dashoffset" dur="2s" values="0;-15.708;-31.416" repeatCount="indefinite"/>
+            </circle>
+          </svg>
+        </span>
+      </button>
+      
+      <button id="tbyb-info-btn" class="tbyb-btn tbyb-btn-secondary">
+        Learn More
+      </button>
+    </div>
+
+    <!-- TBYB Modal -->
+    <div id="tbyb-modal" class="tbyb-modal" style="display: none;">
+      <div class="tbyb-modal-backdrop" id="tbyb-modal-backdrop"></div>
+      <div class="tbyb-modal-content">
+        <div class="tbyb-modal-header">
+          <h2>Try Before You Buy</h2>
+          <button id="tbyb-modal-close" class="tbyb-modal-close">&times;</button>
+        </div>
+        <div class="tbyb-modal-body">
+          <div class="tbyb-step">
+            <div class="tbyb-step-number">1</div>
+            <div class="tbyb-step-content">
+              <h3>Order Sample</h3>
+              <p>Pay just ${{ block.settings.deposit_amount | default: 10 | money_without_currency }} to get a sample of this product.</p>
+            </div>
+          </div>
+          <div class="tbyb-step">
+            <div class="tbyb-step-number">2</div>
+            <div class="tbyb-step-content">
+              <h3>Try for {{ block.settings.trial_days | default: "14" }} Days</h3>
+              <p>Test the product at home. We'll send you reminders before your trial period ends.</p>
+            </div>
+          </div>
+          <div class="tbyb-step">
+            <div class="tbyb-step-number">3</div>
+            <div class="tbyb-step-content">
+              <h3>Keep or Cancel</h3>
+              <p>Love it? We'll charge the remaining balance and send the full-size product. Don't love it? Cancel anytime during the trial.</p>
+            </div>
+          </div>
+          <div class="tbyb-terms">
+            <p><small>* Sample shipping charges may apply. Full refund if cancelled within trial period.</small></p>
+          </div>
+        </div>
+        <div class="tbyb-modal-footer">
+          <button id="tbyb-modal-add-sample" class="tbyb-btn tbyb-btn-primary">
+            Add Sample to Cart - ${{ block.settings.deposit_amount | default: 10 | money_without_currency }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="tbyb-loading" class="tbyb-loading" style="display: none;">
+      <div class="tbyb-loading-content">
+        <div class="tbyb-spinner-large">
+          <svg width="32" height="32" viewBox="0 0 24 24">
+            <circle class="tbyb-spinner-path" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="31.416" stroke-dashoffset="31.416">
+              <animate attributeName="stroke-dasharray" dur="2s" values="0 31.416;15.708 15.708;0 31.416" repeatCount="indefinite"/>
+              <animate attributeName="stroke-dashoffset" dur="2s" values="0;-15.708;-31.416" repeatCount="indefinite"/>
+            </circle>
+          </svg>
+        </div>
+        <p>Checking availability...</p>
+      </div>
+    </div>
+
+    <!-- Not Available State -->
+    <div id="tbyb-not-available" class="tbyb-not-available" style="display: none;">
+      <p>Try Before You Buy is not available for this product.</p>
+    </div>
+  </div>
+
+  <script src="{{ 'tbyb.js' | asset_url }}" defer></script>
+  <link rel="stylesheet" href="{{ 'tbyb.css' | asset_url }}">
+{% endif %}
+
+{% schema %}
+{
+  "name": "Try Before You Buy Button",
+  "target": "section",
+  "templates": ["product"],
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "enabled",
+      "label": "Enable Try Before You Buy",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Title",
+      "default": "Try Before You Buy"
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Description",
+      "default": "Order a sample, try it for 14 days, then decide!"
+    },
+    {
+      "type": "number",
+      "id": "deposit_amount",
+      "label": "Deposit Amount",
+      "default": 10,
+      "info": "Amount charged as deposit for samples"
+    },
+    {
+      "type": "number",
+      "id": "trial_days",
+      "label": "Trial Period (days)",
+      "default": 14,
+      "info": "Number of days for trial period"
+    },
+    {
+      "type": "color",
+      "id": "primary_color",
+      "label": "Primary Button Color",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "secondary_color",
+      "label": "Secondary Button Color",
+      "default": "#666666"
+    }
+  ]
+}
+{% endschema %} 

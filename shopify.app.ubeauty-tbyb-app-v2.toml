@@ -1,25 +1,25 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "c9eeb35af488c0978a90b5dab4f7b538"
-name = "Ubeauty-tbyb-app"
-handle = "ubeauty-tbyb-app"
-application_url = "https://edmonton-von-deaths-piano.trycloudflare.com"
+client_id = "ba318d182c852b85e963835a777a2dfb"
+name = "ubeauty-tbyb-app-v2"
+handle = "ubeauty-tbyb-app-v2"
+application_url = "https://chemicals-nathan-ricky-orleans.trycloudflare.com"
 embedded = true
 
 [build]
-include_config_on_deploy = true
 automatically_update_urls_on_dev = true
+include_config_on_deploy = true
 
 [webhooks]
 api_version = "2025-04"
 
   [[webhooks.subscriptions]]
-  topics = [ "app/uninstalled" ]
-  uri = "/webhooks/app/uninstalled"
-
-  [[webhooks.subscriptions]]
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
 
   [[webhooks.subscriptions]]
   topics = [ "orders/create" ]
@@ -39,13 +39,13 @@ api_version = "2025-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,read_products,write_orders,read_orders,write_customers,read_customers,write_draft_orders,read_draft_orders,write_fulfillments,read_fulfillments,write_purchase_options,read_purchase_options,write_payment_terms,read_payment_terms"
+scopes = "read_customers,read_draft_orders,read_fulfillments,read_orders,read_payment_terms,read_products,read_purchase_options,write_customers,write_draft_orders,write_fulfillments,write_orders,write_payment_terms,write_products,write_purchase_options"
 
 [auth]
 redirect_urls = [
-  "https://edmonton-von-deaths-piano.trycloudflare.com/auth/callback",
-  "https://edmonton-von-deaths-piano.trycloudflare.com/auth/shopify/callback",
-  "https://edmonton-von-deaths-piano.trycloudflare.com/api/auth/callback"
+  "https://chemicals-nathan-ricky-orleans.trycloudflare.com/auth/callback",
+  "https://chemicals-nathan-ricky-orleans.trycloudflare.com/auth/shopify/callback",
+  "https://chemicals-nathan-ricky-orleans.trycloudflare.com/api/auth/callback"
 ]
 
 [pos]
@@ -53,5 +53,5 @@ embedded = false
 
 [[extensions]]
 type = "theme_app_extension"
-name = "tbyb-extension"
-handle = "tbyb-extension"
+name = "Try Before You Buy Extension"
+handle = "tbyb"

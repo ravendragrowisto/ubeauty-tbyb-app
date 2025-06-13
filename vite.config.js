@@ -19,6 +19,10 @@ if (
 
 const host = new URL(process.env.SHOPIFY_APP_URL || "http://localhost")
   .hostname;
+
+// Add ngrok hostname for development tunneling
+const ngrokHost = "ae6a-2409-40c4-1013-8a25-7c8d-c844-447e-5702.ngrok-free.app";
+
 let hmrConfig;
 
 if (host === "localhost") {
@@ -39,7 +43,7 @@ if (host === "localhost") {
 
 export default defineConfig({
   server: {
-    allowedHosts: [host],
+    allowedHosts: [host, ngrokHost],
     cors: {
       preflightContinue: true,
     },
