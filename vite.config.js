@@ -21,7 +21,7 @@ const host = new URL(process.env.SHOPIFY_APP_URL || "http://localhost")
   .hostname;
 
 // Add ngrok hostname for development tunneling
-const ngrokHost = "ae6a-2409-40c4-1013-8a25-7c8d-c844-447e-5702.ngrok-free.app";
+const ngrokHost = "34d6-2409-40c4-17c-4e05-84c7-cf04-9960-d56f.ngrok-free.app";
 
 let hmrConfig;
 

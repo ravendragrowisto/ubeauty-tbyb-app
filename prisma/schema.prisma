@@ -54,11 +54,15 @@ model CustomerSampleHistory {
   id              String   @id @default(cuid())
   customerId      String   // Shopify customer ID
   productId       String   // Main product ID
+  variantId       String?  // Product variant ID
   sampleOrderId   String?  // Sample order ID
   deferredOrderId String?  // Deferred full-size order ID
   contractId      String?  // Subscription contract ID
+  sellingPlanId   String?  // Selling plan ID
   trialStartDate  DateTime?
   trialEndDate    DateTime?
+  trialDays       Int?     // Number of trial days
+  depositAmount   Float?   // Deposit amount paid
   status          TBYBStatus @default(SAMPLE_ORDERED)
   depositPaid     Boolean  @default(false)
   finalPaymentDue String?  // Amount due for full product

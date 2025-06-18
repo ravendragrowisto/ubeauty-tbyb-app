@@ -6,5 +6,9 @@
     "home": {
       "recommendationText": "Recommended Product!"
     }
+  },
+  "tbyb": {
+    "login_required": "Please log in to try a sample",
+    "redirecting": "Redirecting to login..."
   }
 }

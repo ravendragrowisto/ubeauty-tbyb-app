@@ -107,7 +107,7 @@ Displays on product pages when TBYB is available for the product
     </div>
   </div>
 
-  <script src="{{ 'tbyb.js' | asset_url }}" defer></script>
+  <script src="{{ 'tbyb.js' | asset_url }}?v=2.1.5&t={{ 'now' | date: '%s' }}" defer></script>
   <link rel="stylesheet" href="{{ 'tbyb.css' | asset_url }}">
 {% endif %}
 

@@ -1,0 +1,435 @@
+import { authenticate } from "../shopify.server";
+import db from "../db.server";
+
+export const action = async ({ request }) => {
+  try {
+    const { topic, shop, session, admin, payload } = await authenticate.webhook(request);
+
+    if (!payload) {
+      return new Response("No payload", { status: 400 });
+    }
+
+    console.log(`Processing ${topic} webhook for shop: ${shop}`);
+
+    // Process TBYB orders
+    await processTBYBOrder(payload, admin, session);
+
+    return new Response("OK", { status: 200 });
+  } catch (error) {
+    console.error("Error processing orders/create webhook:", error);
+    return new Response("Error", { status: 500 });
+  }
+};
+
+async function processTBYBOrder(order, admin, session) {
+  try {
+    // Check if this order contains TBYB samples
+    const tbybLineItems = order.line_items.filter(item => 
+      item.properties && 
+      item.properties.some(prop => prop.name === '_tbyb_sample' && prop.value === 'true')
+    );
+
+    if (tbybLineItems.length === 0) {
+      console.log('No TBYB items in order', order.id);
+      return;
+    }
+
+    console.log(`Processing TBYB order ${order.id} with ${tbybLineItems.length} TBYB items`);
+
+    // Process each TBYB line item
+    for (const lineItem of tbybLineItems) {
+      await processTBYBLineItem(order, lineItem, admin, session);
+    }
+
+    // Update order metafields
+    await admin.graphql(`
+      mutation orderUpdate($input: OrderInput!) {
+        orderUpdate(input: $input) {
+          order {
+            id
+            metafields(first: 10) {
+              nodes {
+                key
+                value
+              }
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `, {
+      variables: {
+        input: {
+          id: `gid://shopify/Order/${order.id}`,
+          metafields: [
+            {
+              key: "tbyb_trial_start",
+              value: new Date().toISOString(),
+              type: "date_time"
+            },
+            {
+              key: "tbyb_trial_end", 
+              value: new Date(Date.now() + (14 * 24 * 60 * 60 * 1000)).toISOString(),
+              type: "date_time"
+            },
+            {
+              key: "tbyb_order_type",
+              value: "sample_order",
+              type: "single_line_text_field"
+            }
+          ]
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error processing TBYB order:', error);
+  }
+}
+
+async function processTBYBLineItem(order, lineItem, admin, session) {
+  try {
+    // Extract TBYB properties
+    const tbybProps = {};
+    lineItem.properties.forEach(prop => {
+      if (prop.name.startsWith('_tbyb_')) {
+        tbybProps[prop.name] = prop.value;
+      }
+    });
+
+    const trialDays = parseInt(tbybProps['_tbyb_trial_days']) || 14;
+    const trialStartDate = new Date();
+    const trialEndDate = new Date(Date.now() + (trialDays * 24 * 60 * 60 * 1000));
+
+    // Step 1: Create draft order for full-size product SKU (as per flowchart)
+    let draftOrderId = null;
+    try {
+      // Get the original product details to create draft order for full-size version
+      const productResponse = await admin.graphql(`
+        query getProductVariant($id: ID!) {
+          productVariant(id: $id) {
+            id
+            price
+            compareAtPrice
+            sku
+            title
+            product {
+              id
+              title
+              handle
+            }
+          }
+        }
+      `, {
+        variables: { id: `gid://shopify/ProductVariant/${lineItem.variant_id}` }
+      });
+
+      const variantData = productResponse.data?.productVariant;
+      if (variantData) {
+        // Calculate remaining amount (full price minus deposit)
+        const fullPrice = parseFloat(variantData.price);
+        const depositAmount = parseFloat(tbybProps['_tbyb_deposit']) || 10;
+        const remainingAmount = fullPrice - depositAmount;
+
+        // Create draft order for the full-size product
+        const draftOrderResponse = await admin.graphql(`
+          mutation draftOrderCreate($input: DraftOrderInput!) {
+            draftOrderCreate(input: $input) {
+              draftOrder {
+                id
+                name
+                status
+                totalPrice
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `, {
+          variables: {
+            input: {
+              customerId: order.customer?.id ? `gid://shopify/Customer/${order.customer.id}` : null,
+              email: order.email,
+              billingAddress: order.billing_address ? {
+                firstName: order.billing_address.first_name,
+                lastName: order.billing_address.last_name,
+                address1: order.billing_address.address1,
+                address2: order.billing_address.address2,
+                city: order.billing_address.city,
+                province: order.billing_address.province,
+                country: order.billing_address.country,
+                zip: order.billing_address.zip,
+                phone: order.billing_address.phone
+              } : null,
+              shippingAddress: order.shipping_address ? {
+                firstName: order.shipping_address.first_name,
+                lastName: order.shipping_address.last_name,
+                address1: order.shipping_address.address1,
+                address2: order.shipping_address.address2,
+                city: order.shipping_address.city,
+                province: order.shipping_address.province,
+                country: order.shipping_address.country,
+                zip: order.shipping_address.zip,
+                phone: order.shipping_address.phone
+              } : null,
+              lineItems: [
+                {
+                  variantId: `gid://shopify/ProductVariant/${lineItem.variant_id}`,
+                  quantity: lineItem.quantity,
+                  customAttributes: [
+                    {
+                      key: "_tbyb_full_order",
+                      value: "true"
+                    },
+                    {
+                      key: "_tbyb_sample_order_id", 
+                      value: order.id.toString()
+                    },
+                    {
+                      key: "_tbyb_trial_start",
+                      value: trialStartDate.toISOString()
+                    },
+                    {
+                      key: "_tbyb_trial_end",
+                      value: trialEndDate.toISOString()
+                    },
+                    {
+                      key: "_tbyb_remaining_amount",
+                      value: remainingAmount.toString()
+                    }
+                  ]
+                }
+              ],
+              note: `TBYB Draft Order - Customer has ${trialDays} days to decide. Original sample order: ${order.name || order.id}. Remaining amount: $${remainingAmount.toFixed(2)}`,
+              tags: ["TBYB", "draft_order", "trial_pending"],
+              metafields: [
+                {
+                  key: "tbyb_sample_order_id",
+                  value: order.id.toString(),
+                  type: "single_line_text_field"
+                },
+                {
+                  key: "tbyb_trial_start",
+                  value: trialStartDate.toISOString(),
+                  type: "date_time"
+                },
+                {
+                  key: "tbyb_trial_end",
+                  value: trialEndDate.toISOString(),
+                  type: "date_time"
+                },
+                {
+                  key: "tbyb_status",
+                  value: "trial_active",
+                  type: "single_line_text_field"
+                },
+                {
+                  key: "tbyb_remaining_amount",
+                  value: remainingAmount.toString(),
+                  type: "number_decimal"
+                }
+              ]
+            }
+          }
+        });
+
+        const draftOrderData = draftOrderResponse.data?.draftOrderCreate;
+        if (draftOrderData?.draftOrder && !draftOrderData.userErrors?.length) {
+          draftOrderId = draftOrderData.draftOrder.id.split('/').pop(); // Extract numeric ID
+          console.log(`✅ Created draft order ${draftOrderId} for TBYB trial - Customer ${order.customer?.id}, Product ${lineItem.product_id}`);
+        } else {
+          console.error('❌ Error creating draft order:', draftOrderData?.userErrors);
+        }
+      }
+    } catch (draftOrderError) {
+      console.error('❌ Error creating TBYB draft order:', draftOrderError);
+    }
+
+    // Step 2: Save to database with draft order reference
+    try {
+      await db.customerSampleHistory.create({
+        data: {
+          customerId: order.customer?.id?.toString() || 'guest',
+          productId: lineItem.product_id?.toString(),
+          variantId: lineItem.variant_id?.toString(),
+          sampleOrderId: order.id.toString(),
+          deferredOrderId: draftOrderId, // Link to the draft order
+          trialStartDate: trialStartDate,
+          trialEndDate: trialEndDate,
+          status: 'SAMPLE_ORDERED',
+          depositAmount: parseFloat(tbybProps['_tbyb_deposit']) || 10,
+          trialDays: trialDays,
+          sellingPlanId: lineItem.selling_plan_allocation?.selling_plan?.id || null,
+          shop: session.shop
+        }
+      });
+
+      console.log(`✅ Saved TBYB trial record for customer ${order.customer?.id} and product ${lineItem.product_id}`);
+    } catch (dbError) {
+      console.error('❌ Error saving TBYB trial record:', dbError);
+    }
+
+    // Step 3: Update customer metafields for sample order tracking (as per flowchart)
+    if (order.customer?.id) {
+      try {
+        // First, get existing customer metafields to append to active trials
+        const customerResponse = await admin.graphql(`
+          query getCustomer($id: ID!) {
+            customer(id: $id) {
+              id
+              metafields(first: 10, keys: ["tbyb_active_trials", "tbyb_trial_count"]) {
+                nodes {
+                  key
+                  value
+                }
+              }
+            }
+          }
+        `, {
+          variables: { id: `gid://shopify/Customer/${order.customer.id}` }
+        });
+
+        const customer = customerResponse.data?.customer;
+        let existingTrials = [];
+        let trialCount = 0;
+
+        // Parse existing metafields
+        if (customer?.metafields?.nodes) {
+          for (const metafield of customer.metafields.nodes) {
+            if (metafield.key === 'tbyb_active_trials' && metafield.value) {
+              try {
+                existingTrials = JSON.parse(metafield.value);
+              } catch (e) {
+                existingTrials = [];
+              }
+            }
+            if (metafield.key === 'tbyb_trial_count' && metafield.value) {
+              trialCount = parseInt(metafield.value) || 0;
+            }
+          }
+        }
+
+        // Add new trial to existing trials
+        const newTrial = {
+          sampleOrderId: order.id.toString(),
+          draftOrderId: draftOrderId,
+          productId: lineItem.product_id.toString(),
+          variantId: lineItem.variant_id.toString(),
+          trialStart: trialStartDate.toISOString(),
+          trialEnd: trialEndDate.toISOString(),
+          status: "trial_active",
+          productTitle: lineItem.title || "Unknown Product"
+        };
+
+        existingTrials.push(newTrial);
+        trialCount += 1;
+
+        // Update customer metafields
+        await admin.graphql(`
+          mutation customerUpdate($input: CustomerInput!) {
+            customerUpdate(input: $input) {
+              customer {
+                id
+                metafields(first: 10) {
+                  nodes {
+                    key
+                    value
+                  }
+                }
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `, {
+          variables: {
+            input: {
+              id: `gid://shopify/Customer/${order.customer.id}`,
+              metafields: [
+                {
+                  key: "tbyb_active_trials",
+                  value: JSON.stringify(existingTrials),
+                  type: "json"
+                },
+                {
+                  key: "tbyb_trial_count",
+                  value: trialCount.toString(),
+                  type: "number_integer"
+                },
+                {
+                  key: "tbyb_last_trial_start",
+                  value: trialStartDate.toISOString(),
+                  type: "date_time"
+                },
+                {
+                  key: "tbyb_total_samples_ordered",
+                  value: trialCount.toString(),
+                  type: "number_integer"
+                }
+              ]
+            }
+          }
+        });
+
+        console.log(`✅ Updated customer ${order.customer.id} metafields for TBYB trial (${trialCount} total trials)`);
+      } catch (customerUpdateError) {
+        console.error('❌ Error updating customer metafields:', customerUpdateError);
+      }
+    }
+
+    // Step 4: Log selling plan information if present
+    if (lineItem.selling_plan_allocation && lineItem.selling_plan_allocation.selling_plan) {
+      console.log('✅ Order has selling plan allocation:', lineItem.selling_plan_allocation.selling_plan.id);
+      console.log('📝 Note: Selling plan will be handled by Shopify automatically');
+    }
+
+    // Step 5: Create fulfillment for immediate shipping of sample
+    try {
+      await admin.graphql(`
+        mutation fulfillmentCreate($fulfillment: FulfillmentInput!) {
+          fulfillmentCreate(fulfillment: $fulfillment) {
+            fulfillment {
+              id
+              status
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `, {
+        variables: {
+          fulfillment: {
+            orderId: `gid://shopify/Order/${order.id}`,
+            lineItems: [
+              {
+                id: `gid://shopify/LineItem/${lineItem.id}`,
+                quantity: lineItem.quantity
+              }
+            ],
+            trackingInfo: {
+              company: "TBYB Sample",
+              number: `TBYB-${order.id}-${lineItem.id}`
+            },
+            notifyCustomer: true
+          }
+        }
+      });
+
+      console.log(`✅ Created fulfillment for TBYB sample order ${order.id}`);
+    } catch (fulfillmentError) {
+      console.error('❌ Error creating fulfillment:', fulfillmentError);
+    }
+
+  } catch (error) {
+    console.error('❌ Error processing TBYB line item:', error);
+  }
+} 

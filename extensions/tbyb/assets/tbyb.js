@@ -5,6 +5,7 @@
 
 class TBYBManager {
   constructor() {
+    console.log('🚀 TBYB Manager v2.1.5 initializing...');
     this.container = document.querySelector('.tbyb-container');
     this.button = document.getElementById('tbyb-button');
     this.infoButton = document.getElementById('tbyb-info-btn');
@@ -19,9 +20,16 @@ class TBYBManager {
     this.variantId = null;
     this.tbybConfig = null;
     this.sellingPlan = null;
+    this.isRedirecting = false; // Flag to prevent multiple redirects
     
-    // App URL configuration for API calls
-    this.appUrl = 'https://ae6a-2409-40c4-1013-8a25-7c8d-c844-447e-5702.ngrok-free.app';
+    // Dynamic App URL configuration for API calls
+    this.appUrl = this.getAppUrl();
+    
+    // Version for cache busting - update this when making changes
+    this.version = '2.1.5';
+    
+    console.log('📡 TBYB App URL configured:', this.appUrl);
+    console.log('🔢 TBYB Version:', this.version);
     
     this.init();
   }
@@ -110,29 +118,50 @@ class TBYBManager {
 
       // First, try to create or get real selling plan using public API
       const shopDomain = window.Shopify?.shop || window.location.hostname;
-      const realSellingPlanResponse = await fetch(`${this.appUrl}/app/api/tbyb/public/create-selling-plan`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          productId: this.productId,
-          variantId: this.variantId,
-          shopDomain: shopDomain
-        })
-      });
-
+      console.log('🌐 Using shop domain:', shopDomain);
+      console.log('📦 Product/Variant:', this.productId, '/', this.variantId);
+      
       let realSellingPlan = null;
-      if (realSellingPlanResponse.ok) {
-        const realData = await realSellingPlanResponse.json();
-        if (realData.success) {
-          realSellingPlan = realData;
-          console.log('Real selling plan:', realData.created ? 'created' : 'exists', realData.sellingPlan);
+      try {
+        const realSellingPlanResponse = await fetch(`${this.appUrl}/app/api/tbyb/public/create-selling-plan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            productId: this.productId,
+            variantId: this.variantId,
+            shopDomain: shopDomain
+          })
+        });
+
+        console.log('Selling plan API response status:', realSellingPlanResponse.status);
+
+        if (realSellingPlanResponse.ok) {
+          const responseText = await realSellingPlanResponse.text();
+          console.log('Selling plan API response text:', responseText);
+          
+          if (responseText && responseText.trim() !== '') {
+            try {
+              const realData = JSON.parse(responseText);
+              if (realData.success) {
+                realSellingPlan = realData;
+                console.log('✅ Real selling plan:', realData.created ? 'created' : 'exists', realData.sellingPlan);
+              } else {
+                console.warn('❌ Public API error:', realData.message);
+              }
+            } catch (parseError) {
+              console.error('❌ Failed to parse selling plan response:', parseError);
+            }
+          } else {
+            console.warn('❌ Empty response from selling plan API');
+          }
         } else {
-          console.warn('Public API error:', realData.message);
+          const errorText = await realSellingPlanResponse.text();
+          console.warn('❌ Failed to create real selling plan via public API:', realSellingPlanResponse.status, errorText);
         }
-      } else {
-        console.warn('Failed to create real selling plan via public API, falling back to eligibility check');
+      } catch (sellingPlanError) {
+        console.error('❌ Error calling selling plan API:', sellingPlanError);
       }
 
       // Get eligibility and configuration using public API
@@ -150,8 +179,24 @@ class TBYBManager {
         })
       });
 
+      console.log('Eligibility API response status:', response.status);
+      console.log('Eligibility API response headers:', response.headers);
+
       if (response.ok) {
-        const data = await response.json();
+        const responseText = await response.text();
+        console.log('Eligibility API response text:', responseText);
+        
+        if (!responseText || responseText.trim() === '') {
+          throw new Error('Empty response from eligibility API');
+        }
+        
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error('Failed to parse eligibility response:', parseError);
+          throw new Error('Invalid JSON response from eligibility API');
+        }
         this.tbybConfig = data.config;
         
         // Priority 1: Use real selling plan from creation if successful
@@ -196,15 +241,37 @@ class TBYBManager {
           }
         }
       } else {
-        throw new Error('Failed to check eligibility');
+        const errorText = await response.text();
+        console.error('❌ Eligibility API failed with status:', response.status);
+        console.error('❌ Error response:', errorText);
+        throw new Error(`Eligibility API failed: ${response.status} - ${errorText}`);
       }
     } catch (error) {
-      console.error('Error checking eligibility:', error);
+      console.error('❌ Error checking TBYB eligibility:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        stack: error.stack,
+        appUrl: this.appUrl,
+        productId: this.productId,
+        variantId: this.variantId
+      });
       this.showNotAvailable();
     }
   }
 
   async handleAddSample() {
+    // Prevent multiple login redirects
+    if (this.isRedirecting) {
+      return;
+    }
+    
+    // Check if customer is logged in first
+    if (!this.isCustomerLoggedIn()) {
+      this.isRedirecting = true;
+      this.showLoginRequiredAndRedirect();
+      return;
+    }
+
     if (!this.tbybConfig || !this.sellingPlan) {
       alert('TBYB configuration not loaded. Please try again.');
       return;
@@ -495,22 +562,176 @@ class TBYBManager {
   }
 
   getCustomerId() {
-    // Try to get customer ID from various sources
+    console.log('🔍 Checking customer login status...');
+    
+    // Method 1: Try window.customer
     if (window.customer && window.customer.id) {
+      console.log('✅ Found customer ID in window.customer:', window.customer.id);
       return window.customer.id;
+    } else {
+      console.log('❌ window.customer not found or no ID:', window.customer);
     }
     
+    // Method 2: Try window.Shopify.customer
     if (window.Shopify && window.Shopify.customer && window.Shopify.customer.id) {
+      console.log('✅ Found customer ID in window.Shopify.customer:', window.Shopify.customer.id);
       return window.Shopify.customer.id;
+    } else {
+      console.log('❌ window.Shopify.customer not found or no ID:', window.Shopify?.customer);
     }
 
-    // Check for customer ID in meta tags
+    // Method 3: Check for customer ID in meta tags
     const customerMeta = document.querySelector('meta[name="customer-id"]');
-    if (customerMeta) {
-      return customerMeta.getAttribute('content');
+    if (customerMeta && customerMeta.getAttribute('content')) {
+      const customerId = customerMeta.getAttribute('content');
+      console.log('✅ Found customer ID in meta tag:', customerId);
+      return customerId;
+    } else {
+      console.log('❌ Customer ID meta tag not found');
     }
 
+    // Method 4: Check for customer info in liquid variables (theme-specific)
+    if (typeof customerLoggedIn !== 'undefined' && customerLoggedIn) {
+      console.log('✅ Customer logged in via liquid variable');
+      // Try to find customer ID in other global variables
+      if (typeof customerId !== 'undefined' && customerId) {
+        console.log('✅ Found customer ID in global variable:', customerId);
+        return customerId;
+      }
+    }
+
+    // Method 5: Check for customer data in theme variables
+    if (window.theme && window.theme.customer && window.theme.customer.id) {
+      console.log('✅ Found customer ID in theme object:', window.theme.customer.id);
+      return window.theme.customer.id;
+    }
+
+    // Method 6: Try parsing from page content (last resort)
+    const bodyContent = document.body.innerHTML;
+    const customerMatch = bodyContent.match(/customer['"]\s*:\s*\{[^}]*id['"]\s*:\s*['"]*(\d+)['"]*[^}]*\}/i);
+    if (customerMatch && customerMatch[1]) {
+      console.log('✅ Found customer ID in page content:', customerMatch[1]);
+      return customerMatch[1];
+    }
+
+    console.log('❌ No customer ID found - customer appears to be logged out');
     return null;
+  }
+
+  /**
+   * Check if customer is logged in
+   * @returns {boolean} True if customer is logged in, false otherwise
+   */
+  isCustomerLoggedIn() {
+    const customerId = this.getCustomerId();
+    const isLoggedIn = customerId !== null && customerId !== undefined && customerId !== '' && customerId !== '0';
+    
+    console.log('🔐 Customer login status:', {
+      customerId: customerId,
+      isLoggedIn: isLoggedIn,
+      customerObject: window.customer,
+      shopifyCustomer: window.Shopify?.customer
+    });
+    
+    return isLoggedIn;
+  }
+
+  /**
+   * Get localized text using i18next or fallback to English
+   * @param {string} key - Translation key (e.g., 'tbyb.login_required')
+   * @param {string} fallback - Fallback text if translation not found
+   * @returns {string} Localized text
+   */
+  getLocalizedText(key, fallback) {
+    // Try i18next first
+    if (typeof i18next !== 'undefined' && i18next.t) {
+      const translation = i18next.t(key);
+      if (translation && translation !== key) {
+        return translation;
+      }
+    }
+
+    // Try Shopify's theme translations
+    if (typeof window.theme !== 'undefined' && window.theme.strings && window.theme.strings[key]) {
+      return window.theme.strings[key];
+    }
+
+    // Try accessing nested translation keys
+    const keyParts = key.split('.');
+    let translation = window;
+    
+    // Check if translations are available in window.translations
+    if (window.translations) {
+      translation = window.translations;
+      for (const part of keyParts) {
+        if (translation && typeof translation === 'object' && translation[part]) {
+          translation = translation[part];
+        } else {
+          translation = null;
+          break;
+        }
+      }
+      if (typeof translation === 'string') {
+        return translation;
+      }
+    }
+
+    // Return fallback text
+    return fallback;
+  }
+
+  /**
+   * Show login required message and redirect to login page
+   */
+  showLoginRequiredAndRedirect() {
+    const loginMessage = this.getLocalizedText('tbyb.login_required', 'Please log in to try a sample');
+    
+    // Show the login required message once
+    alert(loginMessage);
+    
+    // Get current page URL for return_to parameter
+    const currentUrl = window.location.href;
+    const returnToParam = encodeURIComponent(currentUrl);
+    
+    // Redirect immediately after the alert is dismissed
+    window.location.href = `/account/login?return_to=${returnToParam}`;
+  }
+
+  /**
+   * Get the app URL dynamically for API calls
+   * This method tries multiple approaches to find the correct ngrok URL
+   */
+  getAppUrl() {
+    // For development, try to determine from browser environment
+    if (window.location.hostname.includes('myshopify.com')) {
+      // We're on a Shopify store, try to detect development URLs
+      
+      // Method 1: Check if there's a global app URL variable
+      if (window.TBYB_APP_URL) {
+        console.log('🔧 Using configured TBYB_APP_URL:', window.TBYB_APP_URL);
+        return window.TBYB_APP_URL;
+      }
+      
+      // Method 2: Try common ngrok patterns with current date/session
+      const commonUrls = [
+        'https://asia-reporter-presents-philadelphia.trycloudflare.com', // Current working URL
+        'https://34d6-2409-40c4-17c-4e05-84c7-cf04-9960-d56f.ngrok-free.app', // Previous working URL
+      ];
+      
+      // For now, return the most recent working URL
+      // TODO: Implement dynamic detection in future versions
+      const currentUrl = commonUrls[0];
+      console.log('🔧 Using fallback development URL:', currentUrl);
+      return currentUrl;
+    }
+    
+    // For production, use relative URLs or configured production URL
+    if (window.TBYB_PRODUCTION_URL) {
+      return window.TBYB_PRODUCTION_URL;
+    }
+    
+    // Default fallback
+    return 'https://asia-reporter-presents-philadelphia.trycloudflare.com';
   }
 
   trackEvent(eventName, properties = {}) {
